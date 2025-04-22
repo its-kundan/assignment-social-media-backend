@@ -2,58 +2,109 @@
 
 ## Database Schema and Entity Relationships
 
-### Entities and Relationships
-- **User**
-  - Fields: `id` (UUID, primary), `username` (varchar, unique), `email` (varchar, unique), `createdAt` (timestamp), `updatedAt` (timestamp)
-  - Relationships:
-    - One-to-Many: Posts (author)
-    - Many-to-Many: Follows (followers and following)
-    - One-to-Many: Likes (user who liked)
-- **Post**
-  - Fields: `id` (UUID, primary), `content` (text), `createdAt` (timestamp), `updatedAt` (timestamp), `authorId` (UUID, foreign key to User)
-  - Relationships:
-    - Many-to-One: User (author)
-    - One-to-Many: Likes
-    - Many-to-Many: Hashtags
-- **Like**
-  - Fields: `id` (UUID, primary), `userId` (UUID, foreign key to User), `postId` (UUID, foreign key to Post), `createdAt` (timestamp)
-  - Relationships:
-    - Many-to-One: User
-    - Many-to-One: Post
-- **Follow**
-  - Fields: `id` (UUID, primary), `followerId` (UUID, foreign key to User), `followingId` (UUID, foreign key to User), `createdAt` (timestamp)
-  - Relationships:
-    - Many-to-One: User (follower)
-    - Many-to-One: User (following)
-- **Hashtag**
-  - Fields: `id` (UUID, primary), `tag` (varchar, unique), `createdAt` (timestamp)
-  - Relationships:
-    - Many-to-Many: Posts
+### Entities
+1. **User**
+   - Columns: `id` (PK), `firstName`, `lastName`, `email` (unique), `createdAt`, `updatedAt`
+   - Relationships:
+     - One-to-Many with `Post` (author)
+     - One-to-Many with `Like` (user)
+     - Many-to-Many with `Follow` (follower and followed)
+   - Indexes:
+     - Unique index on `email`
+     - Index on `createdAt` for sorting
 
-### Indexing Strategy
-- **User**
-  - Unique index on `username` and `email` for quick lookups and uniqueness enforcement.
-- **Post**
-  - Index on `authorId` for efficient feed queries.
-  - Index on `createdAt` for sorting posts in the feed.
-- **Like**
-  - Composite index on `userId` and `postId` for quick like/unlike operations and preventing duplicates.
-  - Index on `postId` for counting likes per post.
-- **Follow**
-  - Composite index on `followerId` and `followingId` for quick follow/unfollow operations and preventing duplicates.
-  - Index on `followingId` for fetching followers.
-- **Hashtag**
-  - Unique index on `tag` for case-insensitive lookups.
-  - Index on `postId` in the join table for fetching posts by hashtag.
+2. **Post**
+   - Columns: `id` (PK), `content`, `authorId` (FK), `createdAt`, `updatedAt`
+   - Relationships:
+     - Many-to-One with `User` (author)
+     - One-to-Many with `Like` (post)
+     - Many-to-Many with `Hashtag`
+   - Indexes:
+     - Composite index on `authorId`, `createdAt` for feed queries
+     - Index on `createdAt` for sorting
 
-### Scalability Considerations
-- **Pagination**: All list endpoints (`/api/feed`, `/api/posts/hashtag/:tag`, `/api/users/:id/followers`, `/api/users/:id/activity`) use `limit` and `offset` for pagination to handle large datasets.
-- **Efficient Queries**: Use TypeORM's query builder with proper joins and indexes to minimize database load.
-- **Caching**: Future implementation could include Redis for caching frequently accessed data like user feeds or hashtag posts.
-- **Database**: SQLite is used for simplicity, but for production, a distributed database like PostgreSQL or a sharded MySQL setup would be considered.
+3. **Like**
+   - Columns: `id` (PK), `userId` (FK), `postId` (FK), `createdAt`
+   - Relationships:
+     - Many-to-One with `User` (user)
+     - Many-to-One with `Post` (post)
+   - Indexes:
+     - Unique composite index on `userId`, `postId` to prevent duplicate likes
+     - Index on `createdAt` for activity queries
 
-### Design Considerations
-- **Data Integrity**: Joi validations ensure input data meets requirements before hitting the database.
-- **Error Handling**: Consistent error responses with appropriate HTTP status codes.
-- **TypeORM Migrations**: Used instead of `synchronize: true` for controlled schema changes.
-- **Testing**: Comprehensive `test.sh` script covers all CRUD operations and special endpoints, ensuring functionality.
+4. **Follow**
+   - Columns: `id` (PK), `followerId` (FK), `followedId` (FK), `createdAt`
+   - Relationships:
+     - Many-to-One with `User` (follower)
+     - Many-to-One with `User` (followed)
+   - Indexes:
+     - Unique composite index on `followerId`, `followedId` to prevent duplicate follows
+     - Index on `createdAt` for sorting followers
+
+5. **Hashtag**
+   - Columns: `id` (PK), `tag` (unique), `createdAt`
+   - Relationships:
+     - Many-to-Many with `Post`
+   - Indexes:
+     - Unique index on `tag`
+     - Index on `createdAt` for sorting
+
+### Relationships
+- **User ↔ Post**: One-to-Many (one user can have many posts, each post has one author)
+- **User ↔ Like**: One-to-Many (one user can have many likes, each like belongs to one user)
+- **Post ↔ Like**: One-to-Many (one post can have many likes, each like belongs to one post)
+- **User ↔ Follow**: Many-to-Many (self-referential through `Follow` entity)
+- **Post ↔ Hashtag**: Many-to-Many (through join table `posts_hashtags`)
+
+## Indexing Strategy
+- **Users**: 
+  - Unique index on `email` for fast lookups and to enforce uniqueness.
+  - Index on `createdAt` for sorting in activity feeds.
+- **Posts**: 
+  - Composite index on `authorId`, `createdAt` for efficient feed queries.
+  - Index on `createdAt` for chronological sorting.
+- **Likes**: 
+  - Unique composite index on `userId`, `postId` to prevent duplicate likes.
+  - Index on `createdAt` for activity history queries.
+- **Follows**: 
+  - Unique composite index on `followerId`, `followedId` to prevent duplicate follows.
+  - Index on `createdAt` for sorting followers by follow date.
+- **Hashtags**: 
+  - Unique index on `tag` for fast lookups and case-insensitive searches.
+  - Index on `createdAt` for sorting.
+
+## Scalability Considerations
+- **Database Optimization**:
+  - Indexes are designed to optimize common queries (feed, hashtag searches, follower lists).
+  - Foreign keys with `ON DELETE CASCADE` ensure data integrity during deletions.
+  - Pagination is implemented for all list endpoints to handle large datasets.
+- **Caching**:
+  - Consider adding Redis for caching frequently accessed data (e.g., user feeds, hashtag posts).
+  - Cache user profiles and post metadata to reduce database load.
+- **Load Balancing**:
+  - The API is stateless, making it suitable for horizontal scaling with a load balancer.
+  - Use environment variables (via `dotenv`) for configuration to support multiple instances.
+- **Query Optimization**:
+  - Use TypeORM's query builder for complex queries to avoid N+1 problems.
+  - Preload relations where necessary to reduce query overhead.
+- **Rate Limiting**:
+  - Implement rate limiting on endpoints to prevent abuse (not implemented in code but recommended).
+- **Background Jobs**:
+  - For heavy operations (e.g., processing hashtag updates), consider using a job queue like Bull.
+
+## Other Design Considerations
+- **Validation**:
+  - Joi is used for input validation to ensure data integrity.
+  - Custom error messages improve user experience.
+- **Error Handling**:
+  - Consistent error responses with meaningful messages.
+  - HTTP status codes follow REST conventions (e.g., 201 for creation, 404 for not found).
+- **Testing**:
+  - The `test.sh` script provides comprehensive testing for all CRUD operations and special endpoints.
+  - Interactive interface allows manual testing for debugging.
+- **Security**:
+  - Input validation prevents injection attacks.
+  - Unique constraints on `Like` and `Follow` prevent duplicate actions.
+  - Future improvements could include JWT authentication for user-specific actions.
+
+This design ensures a robust, scalable, and maintainable backend for the social media platform.
