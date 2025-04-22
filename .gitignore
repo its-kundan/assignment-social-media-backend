@@ -1,4 +1,8 @@
 .history
+node_modules/
+dist/
+.env
+*.sqlite
 # Dependencies
 node_modules/
 npm-debug.log
